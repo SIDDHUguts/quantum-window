@@ -540,6 +540,7 @@
     //  HAND POLYGON STATE
     // =============================================
     let showHelpers = true;
+    let persistedHands = [null, null]; // [leftHand, rightHand] persistent storage
 
     // Convex hull (Graham scan) for creating the mask polygon from fingertips
     function convexHull(points) {
@@ -602,8 +603,8 @@
             hands.setOptions({
                 maxNumHands: 2,
                 modelComplexity: 0,
-                minDetectionConfidence: 0.5,
-                minTrackingConfidence: 0.5
+                minDetectionConfidence: 0.4,
+                minTrackingConfidence: 0.4
             });
             hands.onResults((r) => { latestResults = r; });
         } catch (e) {
@@ -635,35 +636,52 @@
             ctx.translate(W, 0);
             ctx.scale(-1, 1);
 
-            // Collect ALL landmark points from all hands
+            // Collect ALL landmark points from all hands with persistence
             const allPoints = [];
             const allTips = [];
             const tipsIdx = [4, 8, 12, 16, 20];
             // Key structural landmarks: wrist(0), thumb(1,4), index(5,8), middle(9,12), ring(13,16), pinky(17,20)
             const hullIdx = [0, 1, 4, 5, 8, 9, 12, 13, 16, 17, 20];
 
+            // Update persistent hand storage
+            const now = Date.now();
             if (latestResults && latestResults.multiHandLandmarks) {
-                for (let hIdx = 0; hIdx < latestResults.multiHandLandmarks.length; hIdx++) {
-                    const lm = latestResults.multiHandLandmarks[hIdx];
-                    for (const id of hullIdx) {
-                        allPoints.push({
-                            x: lm[id].x * W,
-                            y: lm[id].y * H,
-                            hand: hIdx
-                        });
-                    }
-                    for (const id of tipsIdx) {
-                        allTips.push({
-                            x: lm[id].x * W,
-                            y: lm[id].y * H,
-                            hand: hIdx
-                        });
+                const detected = latestResults.multiHandLandmarks;
+
+                if (detected.length >= 2) {
+                    // Both hands detected — sort left-to-right and store
+                    const sorted = detected.slice().sort((a, b) => a[0].x - b[0].x);
+                    persistedHands[0] = { lm: sorted[0], time: now };
+                    persistedHands[1] = { lm: sorted[1], time: now };
+                } else if (detected.length === 1) {
+                    const lm = detected[0];
+                    const cx = lm[0].x;
+                    // Figure out which stored hand this is closest to
+                    const d0 = persistedHands[0] ? Math.abs(cx - persistedHands[0].lm[0].x) : Infinity;
+                    const d1 = persistedHands[1] ? Math.abs(cx - persistedHands[1].lm[0].x) : Infinity;
+                    if (d0 <= d1) {
+                        persistedHands[0] = { lm, time: now };
+                    } else {
+                        persistedHands[1] = { lm, time: now };
                     }
                 }
             }
 
-            const handCount = latestResults && latestResults.multiHandLandmarks ? latestResults.multiHandLandmarks.length : 0;
-            if (handsValEl) handsValEl.textContent = handCount + ' / 2';
+            // Build points from all persisted hands (within 600ms grace period)
+            for (let hIdx = 0; hIdx < 2; hIdx++) {
+                const ph = persistedHands[hIdx];
+                if (!ph || now - ph.time > 600) continue;
+                const lm = ph.lm;
+                for (const id of hullIdx) {
+                    allPoints.push({ x: lm[id].x * W, y: lm[id].y * H, hand: hIdx });
+                }
+                for (const id of tipsIdx) {
+                    allTips.push({ x: lm[id].x * W, y: lm[id].y * H, hand: hIdx });
+                }
+            }
+
+            const handCount = allPoints.length > 0 ? (allTips.length / 5) : 0;
+            if (handsValEl) handsValEl.textContent = Math.round(handCount) + ' / 2';
 
             if (allPoints.length >= 3) {
                 // Build convex hull polygon from hand landmarks
