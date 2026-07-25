@@ -2,6 +2,7 @@
   "name": "quantum-window",
   "version": "1.0.0",
   "description": "SidLabs Quantum Window Filter",
+  "license": "MIT",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
