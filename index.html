@@ -1166,10 +1166,13 @@
     inputCanvas.width = 160; inputCanvas.height = 120;
     const inputCtx = inputCanvas.getContext('2d', { willReadFrequently: true });
     let processing = false;
+    let lastAiTime = 0;
 
     async function processFrame() {
-        if (hands && video.readyState >= 2 && !processing) {
+        const now = performance.now();
+        if (hands && video.readyState >= 2 && !processing && (now - lastAiTime >= 65)) {
             processing = true;
+            lastAiTime = now;
             try {
                 inputCtx.drawImage(video, 0, 0, 160, 120);
                 await hands.send({ image: inputCanvas });
