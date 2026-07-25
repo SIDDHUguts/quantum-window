@@ -813,8 +813,6 @@
             ctx.save();
             ctx.globalAlpha = p.life;
             ctx.fillStyle = p.color;
-            ctx.shadowColor = p.color;
-            ctx.shadowBlur = 8;
             ctx.beginPath();
             ctx.arc(p.x, p.y, p.size * p.life, 0, Math.PI * 2);
             ctx.fill();
@@ -846,8 +844,6 @@
             ctx.globalAlpha = s.life * 0.6;
             ctx.strokeStyle = '#c9a87c';
             ctx.lineWidth = 3 * s.life;
-            ctx.shadowColor = '#c9a87c';
-            ctx.shadowBlur = 20;
             ctx.beginPath();
             ctx.arc(s.x, s.y, s.radius, 0, Math.PI * 2);
             ctx.stroke();
@@ -867,13 +863,10 @@
     //  FINGER LIGHT PAINTING
     // =============================================
     const lightTrails = []; // { points: [{x,y}], color, hand }
-    const TRAIL_MAX_LENGTH = 80;
+    const TRAIL_MAX_LENGTH = 60;
 
     function updateLightTrails(allTips) {
-        // Only use index fingertips (every 2nd tip = index finger = tips at position 1 per hand)
-        const indexTips = allTips.filter((_, i) => i % 5 === 1); // index finger is 2nd tip (8)
-
-        // Ensure we have a trail per index finger
+        const indexTips = allTips.filter((_, i) => i % 5 === 1);
         while (lightTrails.length < indexTips.length) {
             lightTrails.push({ points: [], color: lightTrails.length === 0 ? '#00d4ff' : '#ff3366' });
         }
@@ -891,20 +884,16 @@
         for (const trail of lightTrails) {
             if (trail.points.length < 2) continue;
             ctx.save();
+            ctx.beginPath();
             for (let i = 1; i < trail.points.length; i++) {
-                const alpha = i / trail.points.length;
-                const width = alpha * 3.5;
-                ctx.beginPath();
                 ctx.moveTo(trail.points[i-1].x, trail.points[i-1].y);
                 ctx.lineTo(trail.points[i].x, trail.points[i].y);
-                ctx.strokeStyle = trail.color;
-                ctx.globalAlpha = alpha * 0.8;
-                ctx.lineWidth = width;
-                ctx.shadowColor = trail.color;
-                ctx.shadowBlur = 12;
-                ctx.lineCap = 'round';
-                ctx.stroke();
             }
+            ctx.strokeStyle = trail.color;
+            ctx.globalAlpha = 0.7;
+            ctx.lineWidth = 3;
+            ctx.lineCap = 'round';
+            ctx.stroke();
             ctx.restore();
         }
     }
@@ -1068,25 +1057,23 @@
                         ctx.fill();
                     }
 
-                    // Web lines between fingertips
+                    // Batched Web Net Lines (1 GPU draw call)
+                    ctx.save();
+                    ctx.beginPath();
                     for (let i = 0; i < allTips.length; i++) {
                         for (let j = i + 1; j < allTips.length; j++) {
                             const a = allTips[i], b = allTips[j];
                             const d = Math.hypot(a.x - b.x, a.y - b.y);
-                            if (d < 400) {
-                                const alpha = (1 - d / 400) * 0.8;
-                                const cross = a.hand !== b.hand;
-                                ctx.beginPath();
+                            if (d < 350) {
                                 ctx.moveTo(a.x, a.y);
                                 ctx.lineTo(b.x, b.y);
-                                ctx.strokeStyle = cross
-                                    ? `rgba(0, 212, 255, ${alpha})`
-                                    : `rgba(238, 34, 85, ${alpha * 0.5})`;
-                                ctx.lineWidth = cross ? 1.6 : 0.8;
-                                ctx.stroke();
                             }
                         }
                     }
+                    ctx.strokeStyle = 'rgba(0, 212, 255, 0.4)';
+                    ctx.lineWidth = 1.2;
+                    ctx.stroke();
+                    ctx.restore();
                 }
 
                 // --- PINCH GESTURE: detect pinch on any hand to switch filter ---
