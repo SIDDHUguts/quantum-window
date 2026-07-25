@@ -1,5 +1,0 @@
-services:
-  - type: web
-    name: sidlabs-quantum-window
-    env: static
-    staticPublishPath: ./
