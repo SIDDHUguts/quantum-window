@@ -537,28 +537,39 @@
     }
 
     // =============================================
-    //  PORTAL STATE & SMOOTH MOTION
+    //  HAND POLYGON STATE
     // =============================================
-    let portalCx = 0, portalCy = 0, portalR = 0;
-    let lastHand1 = null, lastHand2 = null;
-    let lastTwoHandsTime = 0;
     let showHelpers = true;
 
-    function wavyCirclePath(cx, cy, r, t) {
-        const pts = 120;
-        const path = new Path2D();
-        for (let i = 0; i <= pts; i++) {
-            const a = (i / pts) * Math.PI * 2;
-            const wave = Math.sin(a * 6 + t * 2.5) * (r * 0.035)
-                       + Math.sin(a * 3 - t * 1.8) * (r * 0.025);
-            const rr = r + wave;
-            const px = cx + Math.cos(a) * rr;
-            const py = cy + Math.sin(a) * rr;
-            if (i === 0) path.moveTo(px, py);
-            else path.lineTo(px, py);
+    // Convex hull (Graham scan) for creating the mask polygon from fingertips
+    function convexHull(points) {
+        if (points.length < 3) return points.slice();
+        points = points.slice().sort((a, b) => a.x - b.x || a.y - b.y);
+        const cross = (O, A, B) => (A.x - O.x) * (B.y - O.y) - (A.y - O.y) * (B.x - O.x);
+        const lower = [];
+        for (const p of points) {
+            while (lower.length >= 2 && cross(lower[lower.length-2], lower[lower.length-1], p) <= 0) lower.pop();
+            lower.push(p);
         }
-        path.closePath();
-        return path;
+        const upper = [];
+        for (let i = points.length - 1; i >= 0; i--) {
+            const p = points[i];
+            while (upper.length >= 2 && cross(upper[upper.length-2], upper[upper.length-1], p) <= 0) upper.pop();
+            upper.push(p);
+        }
+        upper.pop(); lower.pop();
+        return lower.concat(upper);
+    }
+
+    // Smooth polygon points with lerp
+    let smoothedHull = null;
+
+    function lerpPoints(prev, next, factor) {
+        if (!prev || prev.length !== next.length) return next.slice();
+        return next.map((p, i) => ({
+            x: prev[i].x + (p.x - prev[i].x) * factor,
+            y: prev[i].y + (p.y - prev[i].y) * factor
+        }));
     }
 
     // =============================================
@@ -624,125 +635,90 @@
             ctx.translate(W, 0);
             ctx.scale(-1, 1);
 
-            // Process hand landmarks
-            const handsData = [];
+            // Collect ALL landmark points from all hands
+            const allPoints = [];
+            const allTips = [];
+            const tipsIdx = [4, 8, 12, 16, 20];
+            // Key structural landmarks: wrist(0), thumb(1,4), index(5,8), middle(9,12), ring(13,16), pinky(17,20)
+            const hullIdx = [0, 1, 4, 5, 8, 9, 12, 13, 16, 17, 20];
+
             if (latestResults && latestResults.multiHandLandmarks) {
-                for (const lm of latestResults.multiHandLandmarks) {
-                    const ix = lm[8], tx = lm[4];
-                    const pinchX = W - ((ix.x + tx.x) / 2) * W;
-                    const pinchY = ((ix.y + tx.y) / 2) * H;
-                    const indexX = W - ix.x * W;
-                    const indexY = ix.y * H;
-                    const thumbX = W - tx.x * W;
-                    const thumbY = tx.y * H;
-                    const dist = Math.hypot(indexX - thumbX, indexY - thumbY);
-                    handsData.push({ pinch: {x: pinchX, y: pinchY}, dist });
-                }
-                handsData.sort((a, b) => a.pinch.x - b.pinch.x);
-            }
-
-            if (handsValEl) handsValEl.textContent = handsData.length + ' / 2';
-
-            // Portal solver
-            let hasPortal = false;
-            if (handsData.length >= 1) {
-                let tCx, tCy, tR;
-
-                if (handsData.length >= 2) {
-                    const p1 = handsData[0].pinch, p2 = handsData[1].pinch;
-                    tCx = (p1.x + p2.x) / 2;
-                    tCy = (p1.y + p2.y) / 2;
-                    tR = Math.max(100, Math.min(650, Math.hypot(p1.x-p2.x, p1.y-p2.y) / 1.4));
-                    lastHand1 = {...p1}; lastHand2 = {...p2};
-                    lastTwoHandsTime = Date.now();
-                } else {
-                    const p = handsData[0].pinch;
-                    const dL = lastHand1 ? Math.hypot(p.x-lastHand1.x, p.y-lastHand1.y) : Infinity;
-                    const dR = lastHand2 ? Math.hypot(p.x-lastHand2.x, p.y-lastHand2.y) : Infinity;
-                    const missing = (dL < dR) ? lastHand2 : lastHand1;
-
-                    if (Date.now() - lastTwoHandsTime < 500 && missing) {
-                        tCx = (p.x + missing.x) / 2;
-                        tCy = (p.y + missing.y) / 2;
-                        tR = Math.max(100, Math.min(650, Math.hypot(p.x-missing.x, p.y-missing.y) / 1.4));
-                    } else {
-                        tCx = p.x; tCy = p.y;
-                        tR = Math.max(80, Math.min(300, handsData[0].dist * 3.5));
+                for (let hIdx = 0; hIdx < latestResults.multiHandLandmarks.length; hIdx++) {
+                    const lm = latestResults.multiHandLandmarks[hIdx];
+                    for (const id of hullIdx) {
+                        allPoints.push({
+                            x: lm[id].x * W,
+                            y: lm[id].y * H,
+                            hand: hIdx
+                        });
+                    }
+                    for (const id of tipsIdx) {
+                        allTips.push({
+                            x: lm[id].x * W,
+                            y: lm[id].y * H,
+                            hand: hIdx
+                        });
                     }
                 }
-
-                if (portalCx === 0 && portalCy === 0) {
-                    portalCx = tCx; portalCy = tCy; portalR = tR;
-                } else {
-                    portalCx += (tCx - portalCx) * 0.22;
-                    portalCy += (tCy - portalCy) * 0.22;
-                    portalR  += (tR  - portalR)  * 0.22;
-                }
-                hasPortal = true;
             }
 
-            if (hasPortal && portalR > 10) {
-                const mirCx = W - portalCx;
-                const mirCy = portalCy;
+            const handCount = latestResults && latestResults.multiHandLandmarks ? latestResults.multiHandLandmarks.length : 0;
+            if (handsValEl) handsValEl.textContent = handCount + ' / 2';
 
-                // Dark outside
-                ctx.filter = 'brightness(0.25) saturate(0.3)';
+            if (allPoints.length >= 3) {
+                // Build convex hull polygon from hand landmarks
+                let hull = convexHull(allPoints);
+
+                // Smooth the hull over time
+                smoothedHull = lerpPoints(smoothedHull, hull, 0.3);
+
+                // Build path from smoothed hull
+                const hullPath = new Path2D();
+                for (let i = 0; i < smoothedHull.length; i++) {
+                    if (i === 0) hullPath.moveTo(smoothedHull[i].x, smoothedHull[i].y);
+                    else hullPath.lineTo(smoothedHull[i].x, smoothedHull[i].y);
+                }
+                hullPath.closePath();
+
+                // Dark outside region (dimmed unfiltered video)
+                ctx.filter = 'brightness(0.2) saturate(0.2)';
                 ctx.drawImage(video, dx, dy, dw, dh);
                 ctx.filter = 'none';
 
-                // Filtered portal
-                const portalPath = wavyCirclePath(mirCx, mirCy, portalR, t);
+                // Filtered area inside the hand polygon
                 ctx.save();
-                ctx.clip(portalPath);
+                ctx.clip(hullPath);
                 filters[currentFilter].apply(ctx, video, dx, dy, dw, dh);
                 ctx.restore();
 
-                // Portal edge glow
-                ctx.strokeStyle = `rgba(201, 168, 124, ${0.3 + Math.sin(t * 2) * 0.15})`;
+                // Polygon edge glow
+                ctx.save();
+                ctx.strokeStyle = `rgba(201, 168, 124, ${0.4 + Math.sin(t * 2) * 0.15})`;
                 ctx.lineWidth = 2;
-                ctx.stroke(portalPath);
-
-                // Concentric rings
-                for (let i = 1; i <= 3; i++) {
-                    const ringR = portalR + 20 * i + Math.sin(t * 1.5 + i) * 5;
-                    ctx.beginPath();
-                    ctx.arc(mirCx, mirCy, ringR, 0, Math.PI * 2);
-                    ctx.strokeStyle = `rgba(201, 168, 124, ${0.12 - i * 0.03})`;
-                    ctx.lineWidth = 1;
-                    ctx.setLineDash([4, 8]);
-                    ctx.stroke();
-                    ctx.setLineDash([]);
-                }
+                ctx.stroke(hullPath);
+                ctx.restore();
 
                 // Helpers: diamond reticles & web lines
-                if (showHelpers && latestResults && latestResults.multiHandLandmarks) {
-                    const tipsIdx = [4, 8, 12, 16, 20];
-                    const allTips = [];
+                if (showHelpers) {
+                    for (const tip of allTips) {
+                        // Diamond reticle ◇
+                        ctx.save();
+                        ctx.translate(tip.x, tip.y);
+                        ctx.rotate(Math.PI / 4);
+                        ctx.strokeStyle = 'rgba(201, 168, 124, 0.7)';
+                        ctx.lineWidth = 1.2;
+                        ctx.setLineDash([2, 3]);
+                        ctx.strokeRect(-6, -6, 12, 12);
+                        ctx.setLineDash([]);
+                        ctx.restore();
 
-                    for (let hIdx = 0; hIdx < latestResults.multiHandLandmarks.length; hIdx++) {
-                        const lm = latestResults.multiHandLandmarks[hIdx];
-                        for (const id of tipsIdx) {
-                            const px = lm[id].x * W;
-                            const py = lm[id].y * H;
-                            allTips.push({x: px, y: py, hand: hIdx});
-
-                            ctx.save();
-                            ctx.translate(px, py);
-                            ctx.rotate(Math.PI / 4);
-                            ctx.strokeStyle = 'rgba(201, 168, 124, 0.7)';
-                            ctx.lineWidth = 1.2;
-                            ctx.setLineDash([2, 3]);
-                            ctx.strokeRect(-6, -6, 12, 12);
-                            ctx.setLineDash([]);
-                            ctx.restore();
-
-                            ctx.fillStyle = '#fff';
-                            ctx.beginPath();
-                            ctx.arc(px, py, 2, 0, Math.PI * 2);
-                            ctx.fill();
-                        }
+                        ctx.fillStyle = '#fff';
+                        ctx.beginPath();
+                        ctx.arc(tip.x, tip.y, 2, 0, Math.PI * 2);
+                        ctx.fill();
                     }
 
+                    // Web lines between fingertips
                     for (let i = 0; i < allTips.length; i++) {
                         for (let j = i + 1; j < allTips.length; j++) {
                             const a = allTips[i], b = allTips[j];
@@ -762,7 +738,10 @@
                         }
                     }
                 }
+
             } else {
+                // No hands — show full unfiltered video
+                smoothedHull = null;
                 ctx.drawImage(video, dx, dy, dw, dh);
             }
 
