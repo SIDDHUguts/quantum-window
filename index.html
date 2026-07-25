@@ -518,24 +518,14 @@
         {
             name: 'Anime Ink Sketch',
             apply(ctx, v, x, y, w, h) {
-                // 3. Pure Manga Comic Book B&W Ink Line Art
+                // High-contrast Manga Ink Line Art (Zero loop overhead)
                 ctx.filter = 'grayscale(1) contrast(3.5) brightness(0.85)';
                 ctx.drawImage(v, x, y, w, h);
                 ctx.filter = 'none';
 
                 ctx.globalCompositeOperation = 'multiply';
-                ctx.fillStyle = 'rgba(245, 240, 225, 0.18)';
+                ctx.fillStyle = 'rgba(245, 240, 225, 0.15)';
                 ctx.fillRect(x, y, w, h);
-
-                // Halftone grid dots
-                ctx.fillStyle = 'rgba(0, 0, 0, 0.15)';
-                for (let px = x; px < x + w; px += 8) {
-                    for (let py = y; py < y + h; py += 8) {
-                        ctx.beginPath();
-                        ctx.arc(px, py, 1.2, 0, Math.PI * 2);
-                        ctx.fill();
-                    }
-                }
                 ctx.globalCompositeOperation = 'source-over';
             }
         },
@@ -1186,7 +1176,7 @@
     //  CAMERA & MEDIAPIPE FRAME LOOP
     // =============================================
     const inputCanvas = document.createElement('canvas');
-    inputCanvas.width = 320; inputCanvas.height = 240;
+    inputCanvas.width = 160; inputCanvas.height = 120;
     const inputCtx = inputCanvas.getContext('2d', { willReadFrequently: true });
     let processing = false;
 
@@ -1194,7 +1184,7 @@
         if (hands && video.readyState >= 2 && !processing) {
             processing = true;
             try {
-                inputCtx.drawImage(video, 0, 0, 320, 240);
+                inputCtx.drawImage(video, 0, 0, 160, 120);
                 await hands.send({ image: inputCanvas });
             } catch (e) { /* recover */ }
             processing = false;
