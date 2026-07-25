@@ -14,24 +14,22 @@
 
     <style>
         :root {
-            --bg: #0a0a10;
-            --panel-bg: rgba(18, 18, 28, 0.88);
-            --panel-border: rgba(255,255,255,0.06);
-            --glass: rgba(255,255,255,0.03);
+            --bg: #06060c;
+            --panel-bg: rgba(12, 12, 22, 0.92);
+            --panel-border: rgba(255, 255, 255, 0.08);
+            --glass: rgba(255, 255, 255, 0.04);
             --accent: #c9a87c;
-            --accent-dim: rgba(201,168,124,0.5);
-            --accent-glow: rgba(201,168,124,0.25);
-            --red: #ff4444;
+            --accent-glow: rgba(201, 168, 124, 0.4);
+            --red: #ff3366;
             --green: #00ff88;
             --cyan: #00d4ff;
-            --text: #f0f0f5;
-            --text-dim: #6a6a82;
-            --text-mid: #9a9ab0;
-            --btn-bg: rgba(255,255,255,0.04);
-            --btn-border: rgba(255,255,255,0.08);
-            --btn-hover: rgba(255,255,255,0.08);
-            --btn-active: rgba(201,168,124,0.15);
-            --btn-active-border: rgba(201,168,124,0.4);
+            --purple: #bf55ff;
+            --text: #f8f8fc;
+            --text-dim: #5a5a72;
+            --text-mid: #9a9ab4;
+            --btn-bg: rgba(255, 255, 255, 0.03);
+            --btn-border: rgba(255, 255, 255, 0.08);
+            --btn-hover: rgba(255, 255, 255, 0.09);
         }
 
         * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -83,22 +81,30 @@
         }
         video#webcam { display: none; }
 
-        /* --- Right Side Panel --- */
+        /* --- Right Side Panel (High-Tech Glassmorphism) --- */
         #panel {
-            width: 300px;
-            min-width: 300px;
+            width: 320px;
+            min-width: 320px;
             height: 100vh;
             background: var(--panel-bg);
             border-left: 1px solid var(--panel-border);
-            backdrop-filter: blur(24px);
-            -webkit-backdrop-filter: blur(24px);
-            padding: 28px 22px;
+            backdrop-filter: blur(32px);
+            -webkit-backdrop-filter: blur(32px);
+            padding: 30px 24px;
             display: flex;
             flex-direction: column;
             gap: 0;
             overflow-y: auto;
             z-index: 200;
             transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            box-shadow: -10px 0 40px rgba(0, 0, 0, 0.5);
+        }
+        #panel::before {
+            content: '';
+            position: absolute; top: 0; left: 0; right: 0; height: 1px;
+            background: linear-gradient(90deg, transparent, var(--accent), transparent);
+            opacity: 0.6;
         }
         #panel.hidden {
             transform: translateX(100%);
@@ -106,90 +112,150 @@
 
         /* Panel Header */
         .panel-header {
-            margin-bottom: 28px;
+            margin-bottom: 26px;
+            display: flex;
+            flex-direction: column;
+            position: relative;
         }
-        .panel-title {
-            font-size: 22px;
-            font-weight: 800;
-            letter-spacing: 0.5px;
-            color: var(--text);
-        }
-        .panel-subtitle {
-            font-size: 12px;
-            font-weight: 400;
-            color: var(--text-dim);
-            margin-top: 2px;
-            letter-spacing: 0.5px;
-        }
-
-        /* Section Labels */
-        .section-label {
+        .panel-brand-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
             font-size: 10px;
             font-weight: 700;
             letter-spacing: 2.5px;
             text-transform: uppercase;
             color: var(--accent);
-            margin-bottom: 14px;
-            margin-top: 6px;
+            margin-bottom: 6px;
+        }
+        .brand-dot {
+            width: 6px; height: 6px;
+            border-radius: 50%;
+            background: var(--accent);
+            box-shadow: 0 0 10px var(--accent);
+            animation: pulse-dot 2s infinite ease-in-out;
+        }
+        @keyframes pulse-dot {
+            0%, 100% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(0.7); opacity: 0.4; }
+        }
+        .panel-title {
+            font-size: 26px;
+            font-weight: 800;
+            letter-spacing: -0.5px;
+            background: linear-gradient(135deg, #ffffff 0%, #a0a0c0 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .panel-subtitle {
+            font-size: 11px;
+            font-weight: 500;
+            color: var(--text-dim);
+            margin-top: 2px;
+            letter-spacing: 1.5px;
+            text-transform: uppercase;
         }
 
-        /* Diagnostics */
-        .diag-grid {
+        /* Section Labels */
+        .section-label {
+            font-size: 9px;
+            font-weight: 800;
+            letter-spacing: 3px;
+            text-transform: uppercase;
+            color: var(--accent);
+            margin-bottom: 12px;
+            margin-top: 8px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .section-label::after {
+            content: ''; flex: 1; height: 1px;
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        /* Diagnostics Card */
+        .diag-card {
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 12px;
+            padding: 14px 16px;
+            margin-bottom: 22px;
             display: flex;
             flex-direction: column;
-            gap: 8px;
-            margin-bottom: 24px;
+            gap: 10px;
         }
         .diag-row {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            font-size: 12px;
+            font-size: 11px;
             color: var(--text-mid);
             letter-spacing: 0.5px;
         }
         .diag-row .diag-val {
-            font-weight: 600;
+            font-weight: 700;
             color: var(--green);
-            font-size: 13px;
+            font-size: 12px;
+            letter-spacing: 0.5px;
+            padding: 2px 8px;
+            border-radius: 6px;
+            background: rgba(0, 255, 136, 0.08);
         }
-        .diag-row .diag-val.warn { color: #ffaa00; }
-        .diag-row .diag-val.bad  { color: var(--red); }
-        .diag-row .diag-val.accent { color: var(--accent); }
+        .diag-row .diag-val.warn { color: #ffaa00; background: rgba(255, 170, 0, 0.08); }
+        .diag-row .diag-val.bad  { color: var(--red); background: rgba(255, 51, 102, 0.08); }
+        .diag-row .diag-val.accent { color: var(--accent); background: rgba(201, 168, 124, 0.08); }
+
+        /* Meter Bar */
+        .meter-bar {
+            width: 100%; height: 3px;
+            background: rgba(255, 255, 255, 0.06);
+            border-radius: 3px;
+            overflow: hidden;
+            margin-top: 2px;
+        }
+        .meter-fill {
+            height: 100%; width: 100%;
+            background: linear-gradient(90deg, var(--green), var(--cyan));
+            border-radius: 3px;
+            transition: width 0.3s ease;
+        }
 
         /* Control Buttons */
         .controls-group {
             display: flex;
             flex-direction: column;
             gap: 8px;
-            margin-bottom: 24px;
+            margin-bottom: 22px;
         }
         .ctrl-btn {
             display: flex;
             align-items: center;
-            gap: 10px;
-            padding: 10px 14px;
+            gap: 12px;
+            padding: 12px 16px;
             background: var(--btn-bg);
             border: 1px solid var(--btn-border);
-            border-radius: 8px;
+            border-radius: 10px;
             color: var(--text-mid);
             font-family: 'Outfit', sans-serif;
             font-size: 12px;
-            font-weight: 500;
+            font-weight: 600;
             letter-spacing: 0.5px;
             cursor: pointer;
-            transition: all 0.2s ease;
+            transition: all 0.25s ease;
             user-select: none;
         }
         .ctrl-btn:hover {
             background: var(--btn-hover);
-            border-color: rgba(255,255,255,0.12);
-            color: var(--text);
+            border-color: rgba(201, 168, 124, 0.3);
+            color: #fff;
+            transform: translateY(-1px);
         }
         .ctrl-btn.active {
-            background: var(--btn-active);
-            border-color: var(--btn-active-border);
+            background: rgba(201, 168, 124, 0.12);
+            border-color: var(--accent);
             color: var(--accent);
+            box-shadow: 0 0 16px var(--accent-glow);
         }
         .ctrl-btn .btn-icon {
             font-size: 14px;
@@ -202,52 +268,103 @@
             display: grid;
             grid-template-columns: 1fr 1fr;
             gap: 8px;
-            margin-bottom: 24px;
+            margin-bottom: 22px;
         }
         .preset-btn {
-            padding: 10px 8px;
+            padding: 12px 10px;
             background: var(--btn-bg);
             border: 1px solid var(--btn-border);
-            border-radius: 8px;
-            color: var(--text-dim);
+            border-radius: 10px;
+            color: var(--text-mid);
             font-family: 'Outfit', sans-serif;
             font-size: 11px;
-            font-weight: 500;
+            font-weight: 600;
             letter-spacing: 0.3px;
             cursor: pointer;
-            transition: all 0.2s ease;
-            text-align: center;
+            transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+            text-align: left;
             user-select: none;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            position: relative;
+            overflow: hidden;
+        }
+        .preset-pill {
+            width: 6px; height: 6px;
+            border-radius: 50%;
+            flex-shrink: 0;
         }
         .preset-btn:hover {
             background: var(--btn-hover);
-            border-color: rgba(255,255,255,0.12);
-            color: var(--text);
+            border-color: rgba(255, 255, 255, 0.2);
+            color: #fff;
+            transform: translateY(-1px);
         }
         .preset-btn.active {
-            background: var(--btn-active);
-            border-color: var(--btn-active-border);
-            color: var(--accent);
-            font-weight: 600;
+            background: rgba(201, 168, 124, 0.14);
+            border-color: var(--accent);
+            color: #ffffff;
+            box-shadow: 0 4px 20px rgba(201, 168, 124, 0.2);
+        }
+        .preset-btn.active .preset-pill {
+            box-shadow: 0 0 10px currentColor;
         }
 
         /* Keyboard Hints */
         .hints {
             margin-top: auto;
-            padding-top: 16px;
+            padding-top: 18px;
             border-top: 1px solid var(--panel-border);
         }
         .hint-row {
             font-size: 10px;
             color: var(--text-dim);
             letter-spacing: 1px;
-            line-height: 2;
+            line-height: 2.2;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
         }
         .hint-row kbd {
-            display: inline-block;
-            background: var(--btn-bg);
-            border: 1px solid var(--btn-border);
-            border-radius: 4px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 5px;
+            padding: 2px 7px;
+            font-family: 'Outfit', sans-serif;
+            font-size: 10px;
+            font-weight: 700;
+            color: var(--accent);
+        }
+
+        /* Toggle Panel Button */
+        #toggle-panel {
+            position: fixed;
+            top: 20px; right: 20px;
+            width: 44px; height: 44px;
+            background: var(--panel-bg);
+            border: 1px solid var(--panel-border);
+            backdrop-filter: blur(20px);
+            border-radius: 12px;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            z-index: 300;
+            color: var(--accent);
+            font-size: 18px;
+            transition: all 0.25s ease;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+        }
+        #toggle-panel:hover {
+            background: var(--btn-hover);
+            color: #fff;
+            transform: scale(1.05);
+        }
+        #toggle-panel.visible {
+            display: flex;
+        }
+    </style>
             padding: 1px 6px;
             font-family: 'Outfit', sans-serif;
             font-size: 10px;
@@ -303,16 +420,23 @@
     <div id="panel">
         <!-- Header -->
         <div class="panel-header">
+            <div class="panel-brand-badge">
+                <span class="brand-dot"></span>
+                LIVE QUANTUM HUD
+            </div>
             <div class="panel-title">SidLabs</div>
             <div class="panel-subtitle">Quantum Window Filter</div>
         </div>
 
-        <!-- System Diagnostics -->
+        <!-- System Diagnostics Card -->
         <div class="section-label">System Diagnostics</div>
-        <div class="diag-grid">
+        <div class="diag-card">
             <div class="diag-row">
-                <span>FPS:</span>
+                <span>FPS Performance:</span>
                 <span class="diag-val" id="fps-val">--</span>
+            </div>
+            <div class="meter-bar">
+                <div class="meter-fill" id="fps-meter"></div>
             </div>
             <div class="diag-row">
                 <span>Hands Tracked:</span>
@@ -320,7 +444,7 @@
             </div>
             <div class="diag-row">
                 <span>Active Preset:</span>
-                <span class="diag-val accent" id="active-preset">Neon Cyberpunk</span>
+                <span class="diag-val accent" id="active-preset">Cyber Matrix</span>
             </div>
         </div>
 
@@ -337,15 +461,15 @@
             </button>
         </div>
 
-        <!-- Filter Presets -->
+        <!-- Filter Presets Grid -->
         <div class="section-label">Filter Presets</div>
         <div class="preset-grid" id="preset-grid"></div>
 
         <!-- Keyboard Hints -->
         <div class="hints">
-            <div class="hint-row"><kbd>SPACE</kbd> Cycle Presets</div>
-            <div class="hint-row"><kbd>H</kbd> Toggle Guides</div>
-            <div class="hint-row"><kbd>D</kbd> Toggle Controls</div>
+            <div class="hint-row"><span>Cycle Presets</span><kbd>SPACE</kbd></div>
+            <div class="hint-row"><span>Toggle Guides</span><kbd>H</kbd></div>
+            <div class="hint-row"><span>Toggle Panel</span><kbd>D</kbd></div>
         </div>
     </div>
 
@@ -618,12 +742,25 @@
 
     let currentFilter = 0;
 
-    // Build preset buttons
+    const presetColors = [
+        '#00ff88', // Cyber Matrix
+        '#ff5500', // Thermal Predator
+        '#ffffff', // Anime Ink Sketch
+        '#ff00aa', // Vaporwave Synthwave
+        '#ff0055', // RGB Glitch Tearing
+        '#00d4ff', // Deep Ocean Blue
+        '#ffcc00', // Molten Gold
+        '#aa00ff', // Rainbow Prism
+        '#a0a0a0', // Vintage Film Noir
+        '#00ffcc'  // Acid Psychedelic
+    ];
+
+    // Build preset buttons with glowing color pills
     filters.forEach((f, i) => {
         const btn = document.createElement('button');
         btn.className = 'preset-btn' + (i === 0 ? ' active' : '');
-        btn.textContent = f.name;
         btn.dataset.index = i;
+        btn.innerHTML = `<span class="preset-pill" style="background:${presetColors[i]}; color:${presetColors[i]}"></span><span>${f.name}</span>`;
         btn.addEventListener('click', () => setFilter(i));
         presetGrid.appendChild(btn);
     });
@@ -1056,7 +1193,7 @@
             drawShockwaves(ctx);
         }
 
-        // FPS
+        // FPS Counter & Progress Bar Sync
         frameCount++;
         const now = performance.now();
         if (now - fpsLast >= 500) {
@@ -1064,8 +1201,13 @@
             frameCount = 0;
             fpsLast = now;
             if (fpsVal) {
-                fpsVal.textContent = fpsDisplay.toFixed(1);
+                fpsVal.textContent = fpsDisplay.toFixed(1) + ' FPS';
                 fpsVal.className = 'diag-val' + (fpsDisplay >= 55 ? '' : fpsDisplay >= 30 ? ' warn' : ' bad');
+            }
+            const fpsMeter = document.getElementById('fps-meter');
+            if (fpsMeter) {
+                const pct = Math.min(100, Math.max(5, (fpsDisplay / 60.0) * 100));
+                fpsMeter.style.width = pct + '%';
             }
         }
 
