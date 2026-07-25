@@ -574,8 +574,147 @@
     }
 
     // =============================================
-    //  UI TOGGLE FUNCTIONS
+    //  PINCH-TO-SWITCH FILTER GESTURE
     // =============================================
+    let pinchWasActive = false;
+    let pinchCooldown = 0;
+
+    function detectPinch(landmarks, W, H) {
+        // Index tip (8) to thumb tip (4) distance
+        const ix = landmarks[8], tx = landmarks[4];
+        const dist = Math.hypot((ix.x - tx.x) * W, (ix.y - tx.y) * H);
+        return dist < 35; // pinch threshold in pixels
+    }
+
+    // =============================================
+    //  FINGERTIP PARTICLE SYSTEM
+    // =============================================
+    const particles = [];
+    const MAX_PARTICLES = 200;
+
+    function spawnParticle(x, y, type) {
+        if (particles.length >= MAX_PARTICLES) particles.shift();
+        const angle = Math.random() * Math.PI * 2;
+        const speed = type === 'shockwave' ? (3 + Math.random() * 6) : (0.5 + Math.random() * 2);
+        const colors = ['#c9a87c', '#00d4ff', '#ff3366', '#00ff88', '#ff8800', '#aa44ff'];
+        particles.push({
+            x, y,
+            vx: Math.cos(angle) * speed,
+            vy: Math.sin(angle) * speed - (type === 'trail' ? 1 : 0),
+            life: 1.0,
+            decay: type === 'shockwave' ? 0.025 : 0.018,
+            size: type === 'shockwave' ? (2 + Math.random() * 4) : (1.5 + Math.random() * 2.5),
+            color: colors[Math.floor(Math.random() * colors.length)],
+            type
+        });
+    }
+
+    function updateAndDrawParticles(ctx) {
+        for (let i = particles.length - 1; i >= 0; i--) {
+            const p = particles[i];
+            p.x += p.vx;
+            p.y += p.vy;
+            p.life -= p.decay;
+            if (p.life <= 0) { particles.splice(i, 1); continue; }
+
+            ctx.save();
+            ctx.globalAlpha = p.life;
+            ctx.fillStyle = p.color;
+            ctx.shadowColor = p.color;
+            ctx.shadowBlur = 8;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, p.size * p.life, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+        }
+    }
+
+    // =============================================
+    //  CLAP SHOCKWAVE SYSTEM
+    // =============================================
+    const shockwaves = [];
+
+    function spawnShockwave(x, y) {
+        shockwaves.push({ x, y, radius: 10, maxRadius: 400, life: 1.0 });
+        // Burst of particles
+        for (let i = 0; i < 40; i++) spawnParticle(x, y, 'shockwave');
+    }
+
+    let prevHandsCenterDist = Infinity;
+
+    function drawShockwaves(ctx) {
+        for (let i = shockwaves.length - 1; i >= 0; i--) {
+            const s = shockwaves[i];
+            s.radius += 8;
+            s.life -= 0.025;
+            if (s.life <= 0) { shockwaves.splice(i, 1); continue; }
+
+            ctx.save();
+            ctx.globalAlpha = s.life * 0.6;
+            ctx.strokeStyle = '#c9a87c';
+            ctx.lineWidth = 3 * s.life;
+            ctx.shadowColor = '#c9a87c';
+            ctx.shadowBlur = 20;
+            ctx.beginPath();
+            ctx.arc(s.x, s.y, s.radius, 0, Math.PI * 2);
+            ctx.stroke();
+
+            // Secondary ring
+            ctx.globalAlpha = s.life * 0.3;
+            ctx.strokeStyle = '#00d4ff';
+            ctx.lineWidth = 1.5 * s.life;
+            ctx.beginPath();
+            ctx.arc(s.x, s.y, s.radius * 0.7, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.restore();
+        }
+    }
+
+    // =============================================
+    //  FINGER LIGHT PAINTING
+    // =============================================
+    const lightTrails = []; // { points: [{x,y}], color, hand }
+    const TRAIL_MAX_LENGTH = 80;
+
+    function updateLightTrails(allTips) {
+        // Only use index fingertips (every 2nd tip = index finger = tips at position 1 per hand)
+        const indexTips = allTips.filter((_, i) => i % 5 === 1); // index finger is 2nd tip (8)
+
+        // Ensure we have a trail per index finger
+        while (lightTrails.length < indexTips.length) {
+            lightTrails.push({ points: [], color: lightTrails.length === 0 ? '#00d4ff' : '#ff3366' });
+        }
+        while (lightTrails.length > indexTips.length && lightTrails.length > 0) {
+            lightTrails.pop();
+        }
+
+        for (let i = 0; i < indexTips.length; i++) {
+            lightTrails[i].points.push({ x: indexTips[i].x, y: indexTips[i].y });
+            if (lightTrails[i].points.length > TRAIL_MAX_LENGTH) lightTrails[i].points.shift();
+        }
+    }
+
+    function drawLightTrails(ctx) {
+        for (const trail of lightTrails) {
+            if (trail.points.length < 2) continue;
+            ctx.save();
+            for (let i = 1; i < trail.points.length; i++) {
+                const alpha = i / trail.points.length;
+                const width = alpha * 3.5;
+                ctx.beginPath();
+                ctx.moveTo(trail.points[i-1].x, trail.points[i-1].y);
+                ctx.lineTo(trail.points[i].x, trail.points[i].y);
+                ctx.strokeStyle = trail.color;
+                ctx.globalAlpha = alpha * 0.8;
+                ctx.lineWidth = width;
+                ctx.shadowColor = trail.color;
+                ctx.shadowBlur = 12;
+                ctx.lineCap = 'round';
+                ctx.stroke();
+            }
+            ctx.restore();
+        }
+    }
     function toggleGuides() {
         showHelpers = !showHelpers;
         btnGuides.textContent = '';
@@ -757,13 +896,64 @@
                     }
                 }
 
+                // --- PINCH GESTURE: detect pinch on any hand to switch filter ---
+                if (latestResults && latestResults.multiHandLandmarks) {
+                    const now2 = Date.now();
+                    let anyPinch = false;
+                    for (const lm of latestResults.multiHandLandmarks) {
+                        if (detectPinch(lm, W, H)) anyPinch = true;
+                    }
+                    if (anyPinch && !pinchWasActive && now2 > pinchCooldown) {
+                        setFilter((currentFilter + 1) % filters.length);
+                        pinchCooldown = now2 + 600; // 600ms cooldown
+                        // Pinch spark burst at pinch point
+                        for (const lm of latestResults.multiHandLandmarks) {
+                            const px = ((lm[8].x + lm[4].x) / 2) * W;
+                            const py = ((lm[8].y + lm[4].y) / 2) * H;
+                            for (let k = 0; k < 15; k++) spawnParticle(px, py, 'shockwave');
+                        }
+                    }
+                    pinchWasActive = anyPinch;
+                }
+
+                // --- CLAP SHOCKWAVE: detect 2 hands coming together ---
+                if (persistedHands[0] && persistedHands[1] &&
+                    Date.now() - persistedHands[0].time < 200 &&
+                    Date.now() - persistedHands[1].time < 200) {
+                    const lm0 = persistedHands[0].lm, lm1 = persistedHands[1].lm;
+                    const c0x = lm0[9].x * W, c0y = lm0[9].y * H;
+                    const c1x = lm1[9].x * W, c1y = lm1[9].y * H;
+                    const centerDist = Math.hypot(c0x - c1x, c0y - c1y);
+                    if (prevHandsCenterDist > 80 && centerDist < 60) {
+                        spawnShockwave((c0x + c1x) / 2, (c0y + c1y) / 2);
+                    }
+                    prevHandsCenterDist = centerDist;
+                } else {
+                    prevHandsCenterDist = Infinity;
+                }
+
+                // --- FINGERTIP PARTICLE TRAILS ---
+                for (const tip of allTips) {
+                    if (Math.random() < 0.4) spawnParticle(tip.x, tip.y, 'trail');
+                }
+
+                // --- LIGHT PAINTING ---
+                updateLightTrails(allTips);
+
             } else {
                 // No hands — show full unfiltered video
                 smoothedHull = null;
+                lightTrails.length = 0;
                 ctx.drawImage(video, dx, dy, dw, dh);
             }
 
+            // --- Draw all effects (AFTER mirror restore so they appear correct) ---
             ctx.restore();
+
+            // Draw effects in screen space (non-mirrored)
+            drawLightTrails(ctx);
+            updateAndDrawParticles(ctx);
+            drawShockwaves(ctx);
         }
 
         // FPS
