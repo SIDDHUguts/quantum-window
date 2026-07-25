@@ -1,0 +1,13 @@
+{
+  "name": "quantum-window",
+  "version": "1.0.0",
+  "description": "SidLabs Quantum Window — Real-time AI hand-tracked holographic filter lens",
+  "main": "index.html",
+  "scripts": {
+    "start": "npx -y serve . -l $PORT",
+    "build": "echo 'Build complete'"
+  },
+  "dependencies": {
+    "serve": "^14.2.4"
+  }
+}
