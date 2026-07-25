@@ -1,0 +1,6 @@
+services:
+  - type: web
+    name: sidlabs-quantum-window
+    env: static
+    staticPublishPath: ./
+    buildCommand: echo "Static site ready"

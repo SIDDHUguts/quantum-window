@@ -1,0 +1,681 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SidLabs Quantum Window — Holo Filter Lens</title>
+    <meta name="description" content="SidLabs Quantum Window — Real-time AI hand-tracked holographic filter lens with 10 GPU shader presets.">
+
+    <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+    <link rel="preconnect" href="https://fonts.googleapis.com" crossorigin>
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4/hands.js" crossorigin="anonymous"></script>
+
+    <style>
+        :root {
+            --bg: #06060c;
+            --glass: rgba(255,255,255,0.03);
+            --border: rgba(255,255,255,0.08);
+            --accent: #c9a87c;
+            --accent-glow: rgba(201,168,124,0.35);
+            --text: #f5f5f7;
+            --text-dim: #70708a;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: 'Outfit', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            overflow: hidden;
+            width: 100vw;
+            height: 100vh;
+            cursor: crosshair;
+        }
+
+        /* --- Loading Overlay --- */
+        #loading-overlay {
+            position: fixed; inset: 0;
+            background: var(--bg);
+            display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+            z-index: 9999;
+            transition: opacity 0.5s ease;
+        }
+        .spinner {
+            width: 48px; height: 48px;
+            border: 3px solid var(--border);
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin-bottom: 20px;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        #loading-text {
+            font-size: 13px;
+            font-weight: 400;
+            letter-spacing: 3px;
+            text-transform: uppercase;
+            color: var(--text-dim);
+        }
+
+        /* --- Canvas Layer --- */
+        #output-canvas {
+            position: fixed; inset: 0;
+            width: 100vw; height: 100vh;
+            display: block;
+            background: #000;
+        }
+        video#webcam { display: none; }
+
+        /* --- HUD Top Bar --- */
+        #hud {
+            position: fixed; top: 16px; left: 16px; right: 16px;
+            display: flex; align-items: center; justify-content: space-between;
+            z-index: 100; pointer-events: none;
+        }
+        #hud > * { pointer-events: auto; }
+
+        .hud-badge {
+            background: var(--glass);
+            border: 1px solid var(--border);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border-radius: 10px;
+            padding: 8px 16px;
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            color: var(--text-dim);
+            display: flex; align-items: center; gap: 8px;
+            user-select: none;
+        }
+        .hud-dot {
+            width: 7px; height: 7px;
+            border-radius: 50%;
+            background: var(--accent);
+            box-shadow: 0 0 8px var(--accent-glow);
+            animation: pulse-dot 2s ease-in-out infinite;
+        }
+        @keyframes pulse-dot {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.5; transform: scale(0.8); }
+        }
+
+        /* --- Filter Label --- */
+        #filter-label {
+            position: fixed;
+            bottom: 24px; left: 50%;
+            transform: translateX(-50%);
+            background: var(--glass);
+            border: 1px solid var(--border);
+            backdrop-filter: blur(16px);
+            border-radius: 10px;
+            padding: 10px 28px;
+            font-size: 12px;
+            font-weight: 600;
+            letter-spacing: 3px;
+            text-transform: uppercase;
+            color: var(--accent);
+            z-index: 100;
+            transition: opacity 0.3s;
+            pointer-events: none;
+        }
+
+        /* --- Diagnostics Panel --- */
+        #diag {
+            position: fixed; top: 16px; right: 16px;
+            background: var(--glass);
+            border: 1px solid var(--border);
+            backdrop-filter: blur(16px);
+            border-radius: 10px;
+            padding: 10px 16px;
+            font-size: 10px;
+            font-weight: 400;
+            letter-spacing: 1.5px;
+            color: var(--text-dim);
+            z-index: 100;
+            display: flex; gap: 16px;
+            user-select: none;
+        }
+        #diag .val { color: #00ff88; font-weight: 600; }
+
+        /* --- Control Hints --- */
+        #hints {
+            position: fixed; bottom: 24px; right: 16px;
+            font-size: 10px; letter-spacing: 1.5px;
+            color: var(--text-dim);
+            text-transform: uppercase;
+            z-index: 100;
+            text-align: right;
+            line-height: 1.8;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Loading Overlay -->
+    <div id="loading-overlay">
+        <div class="spinner"></div>
+        <div id="loading-text">Initializing Camera & AI Models...</div>
+    </div>
+
+    <!-- Video Source (hidden) -->
+    <video id="webcam" playsinline autoplay muted></video>
+
+    <!-- Main Render Canvas -->
+    <canvas id="output-canvas"></canvas>
+
+    <!-- HUD -->
+    <div id="hud">
+        <div class="hud-badge">
+            <span class="hud-dot"></span>
+            SidLabs Quantum Window
+        </div>
+    </div>
+
+    <!-- Diagnostics -->
+    <div id="diag">
+        <span>FPS <span class="val" id="fps-val">--</span></span>
+        <span>HANDS <span class="val" id="hands-val">0</span></span>
+    </div>
+
+    <!-- Filter Label -->
+    <div id="filter-label">—</div>
+
+    <!-- Control Hints -->
+    <div id="hints">
+        [F] Switch Filter &nbsp; [H] Toggle Helpers<br>
+        [D] Diagnostics &nbsp; Pinch to Control
+    </div>
+
+    <script>
+    (() => {
+        'use strict';
+
+        // --- DOM Elements ---
+        const video       = document.getElementById('webcam');
+        const canvas      = document.getElementById('output-canvas');
+        const ctx         = canvas.getContext('2d');
+        const overlay     = document.getElementById('loading-overlay');
+        const filterLabel = document.getElementById('filter-label');
+        const fpsVal      = document.getElementById('fps-val');
+        const handsVal    = document.getElementById('hands-val');
+        const diag        = document.getElementById('diag');
+
+        // --- Canvas Sizing ---
+        function resize() {
+            canvas.width  = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        resize();
+        window.addEventListener('resize', resize);
+
+        // =============================================
+        //  10 GPU FILTER PRESETS
+        // =============================================
+        const filters = [
+            {
+                name: 'Neon Cyberpunk',
+                apply(ctx, x, y, w, h) {
+                    ctx.filter = 'saturate(2.2) contrast(1.4) brightness(1.1) hue-rotate(200deg)';
+                    ctx.drawImage(video, x, y, w, h);
+                    ctx.filter = 'none';
+                    ctx.globalCompositeOperation = 'screen';
+                    ctx.fillStyle = 'rgba(0, 120, 255, 0.08)';
+                    ctx.fillRect(x, y, w, h);
+                    ctx.globalCompositeOperation = 'source-over';
+                }
+            },
+            {
+                name: 'Film Noir',
+                apply(ctx, x, y, w, h) {
+                    ctx.filter = 'grayscale(1) contrast(1.8) brightness(0.85)';
+                    ctx.drawImage(video, x, y, w, h);
+                    ctx.filter = 'none';
+                    ctx.globalCompositeOperation = 'multiply';
+                    ctx.fillStyle = 'rgba(20, 15, 10, 0.15)';
+                    ctx.fillRect(x, y, w, h);
+                    ctx.globalCompositeOperation = 'source-over';
+                }
+            },
+            {
+                name: 'Retrowave',
+                apply(ctx, x, y, w, h) {
+                    ctx.filter = 'saturate(1.8) contrast(1.2) hue-rotate(280deg) brightness(1.05)';
+                    ctx.drawImage(video, x, y, w, h);
+                    ctx.filter = 'none';
+                    ctx.globalCompositeOperation = 'screen';
+                    const grad = ctx.createLinearGradient(x, y, x, y + h);
+                    grad.addColorStop(0, 'rgba(255, 0, 180, 0.06)');
+                    grad.addColorStop(1, 'rgba(100, 0, 255, 0.08)');
+                    ctx.fillStyle = grad;
+                    ctx.fillRect(x, y, w, h);
+                    ctx.globalCompositeOperation = 'source-over';
+                }
+            },
+            {
+                name: 'Deep Ocean',
+                apply(ctx, x, y, w, h) {
+                    ctx.filter = 'saturate(1.4) contrast(1.1) hue-rotate(160deg) brightness(0.9)';
+                    ctx.drawImage(video, x, y, w, h);
+                    ctx.filter = 'none';
+                    ctx.globalCompositeOperation = 'screen';
+                    ctx.fillStyle = 'rgba(0, 255, 200, 0.04)';
+                    ctx.fillRect(x, y, w, h);
+                    ctx.globalCompositeOperation = 'source-over';
+                }
+            },
+            {
+                name: 'Infrared',
+                apply(ctx, x, y, w, h) {
+                    ctx.filter = 'saturate(2.5) contrast(1.6) hue-rotate(330deg) brightness(1.15)';
+                    ctx.drawImage(video, x, y, w, h);
+                    ctx.filter = 'none';
+                    ctx.globalCompositeOperation = 'screen';
+                    const grad = ctx.createRadialGradient(x+w/2, y+h/2, 0, x+w/2, y+h/2, Math.max(w,h)/2);
+                    grad.addColorStop(0, 'rgba(255, 60, 0, 0.06)');
+                    grad.addColorStop(1, 'rgba(0, 0, 80, 0.04)');
+                    ctx.fillStyle = grad;
+                    ctx.fillRect(x, y, w, h);
+                    ctx.globalCompositeOperation = 'source-over';
+                }
+            },
+            {
+                name: 'Holographic',
+                apply(ctx, x, y, w, h) {
+                    const t = performance.now() * 0.001;
+                    const hue = (t * 40) % 360;
+                    ctx.filter = `saturate(1.6) contrast(1.15) brightness(1.1) hue-rotate(${hue}deg)`;
+                    ctx.drawImage(video, x, y, w, h);
+                    ctx.filter = 'none';
+                    ctx.globalCompositeOperation = 'screen';
+                    ctx.fillStyle = `rgba(255, 255, 255, 0.03)`;
+                    ctx.fillRect(x, y, w, h);
+                    ctx.globalCompositeOperation = 'source-over';
+                }
+            },
+            {
+                name: 'Anime Cel',
+                apply(ctx, x, y, w, h) {
+                    ctx.filter = 'saturate(2.0) contrast(1.7) brightness(1.15)';
+                    ctx.drawImage(video, x, y, w, h);
+                    ctx.filter = 'none';
+                    ctx.globalCompositeOperation = 'multiply';
+                    ctx.fillStyle = 'rgba(255, 240, 220, 0.06)';
+                    ctx.fillRect(x, y, w, h);
+                    ctx.globalCompositeOperation = 'source-over';
+                }
+            },
+            {
+                name: 'Frost Crystal',
+                apply(ctx, x, y, w, h) {
+                    ctx.filter = 'saturate(0.4) contrast(1.2) brightness(1.3) hue-rotate(190deg)';
+                    ctx.drawImage(video, x, y, w, h);
+                    ctx.filter = 'none';
+                    ctx.globalCompositeOperation = 'screen';
+                    ctx.fillStyle = 'rgba(180, 220, 255, 0.06)';
+                    ctx.fillRect(x, y, w, h);
+                    ctx.globalCompositeOperation = 'source-over';
+                }
+            },
+            {
+                name: 'Gold Luxury',
+                apply(ctx, x, y, w, h) {
+                    ctx.filter = 'saturate(1.3) contrast(1.2) brightness(1.05) sepia(0.5)';
+                    ctx.drawImage(video, x, y, w, h);
+                    ctx.filter = 'none';
+                    ctx.globalCompositeOperation = 'screen';
+                    const grad = ctx.createLinearGradient(x, y, x + w, y + h);
+                    grad.addColorStop(0, 'rgba(255, 200, 80, 0.05)');
+                    grad.addColorStop(1, 'rgba(200, 150, 50, 0.04)');
+                    ctx.fillStyle = grad;
+                    ctx.fillRect(x, y, w, h);
+                    ctx.globalCompositeOperation = 'source-over';
+                }
+            },
+            {
+                name: 'Acid Trip',
+                apply(ctx, x, y, w, h) {
+                    const t = performance.now() * 0.002;
+                    const hue = (t * 90) % 360;
+                    ctx.filter = `saturate(3.0) contrast(1.5) brightness(1.2) hue-rotate(${hue}deg)`;
+                    ctx.drawImage(video, x, y, w, h);
+                    ctx.filter = 'none';
+                    ctx.globalCompositeOperation = 'screen';
+                    ctx.fillStyle = 'rgba(0, 255, 100, 0.03)';
+                    ctx.fillRect(x, y, w, h);
+                    ctx.globalCompositeOperation = 'source-over';
+                }
+            }
+        ];
+
+        let currentFilter = 0;
+        filterLabel.textContent = filters[0].name;
+
+        // =============================================
+        //  PORTAL STATE & SMOOTH MOTION
+        // =============================================
+        let portalCx = 0, portalCy = 0, portalR = 0;
+        let lastHand1 = null, lastHand2 = null;
+        let lastTwoHandsTime = 0;
+        let showHelpers = true;
+        let showDiag = true;
+
+        // Wavy circle generator
+        function wavyCirclePath(cx, cy, r, t) {
+            const pts = 120;
+            const path = new Path2D();
+            for (let i = 0; i <= pts; i++) {
+                const a = (i / pts) * Math.PI * 2;
+                const wave = Math.sin(a * 6 + t * 2.5) * (r * 0.035)
+                           + Math.sin(a * 3 - t * 1.8) * (r * 0.025);
+                const rr = r + wave;
+                const px = cx + Math.cos(a) * rr;
+                const py = cy + Math.sin(a) * rr;
+                if (i === 0) path.moveTo(px, py);
+                else path.lineTo(px, py);
+            }
+            path.closePath();
+            return path;
+        }
+
+        // =============================================
+        //  MEDIAPIPE INITIALIZATION
+        // =============================================
+        let latestResults = null;
+        let hands = null;
+
+        function initMediaPipe() {
+            try {
+                hands = new Hands({
+                    locateFile: (f) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4/${f}`
+                });
+                hands.setOptions({
+                    maxNumHands: 2,
+                    modelComplexity: 0,
+                    minDetectionConfidence: 0.5,
+                    minTrackingConfidence: 0.5
+                });
+                hands.onResults((r) => { latestResults = r; });
+            } catch (e) {
+                console.error('MediaPipe init error:', e);
+            }
+        }
+
+        if (typeof Hands !== 'undefined') initMediaPipe();
+        else window.addEventListener('load', initMediaPipe);
+
+        // =============================================
+        //  MAIN 60 FPS RENDER LOOP (Decoupled from MediaPipe)
+        // =============================================
+        let frameCount = 0, fpsDisplay = 0, fpsLast = performance.now();
+
+        function renderScene() {
+            const W = canvas.width, H = canvas.height;
+            const t = performance.now() * 0.001;
+
+            ctx.clearRect(0, 0, W, H);
+
+            // --- Draw mirrored video feed (always, even without hand data) ---
+            if (video.readyState >= 2) {
+                const vw = video.videoWidth, vh = video.videoHeight;
+                const scale = Math.max(W / vw, H / vh);
+                const dw = vw * scale, dh = vh * scale;
+                const dx = (W - dw) / 2, dy = (H - dh) / 2;
+
+                ctx.save();
+                ctx.translate(W, 0);
+                ctx.scale(-1, 1);
+
+                // --- Process hand landmarks ---
+                const handsData = [];
+                if (latestResults && latestResults.multiHandLandmarks) {
+                    for (const lm of latestResults.multiHandLandmarks) {
+                        const ix = lm[8], tx = lm[4];
+                        const pinchX = W - ((ix.x + tx.x) / 2) * W;
+                        const pinchY = ((ix.y + tx.y) / 2) * H;
+                        const indexX = W - ix.x * W;
+                        const indexY = ix.y * H;
+                        const thumbX = W - tx.x * W;
+                        const thumbY = tx.y * H;
+                        const dist = Math.hypot(indexX - thumbX, indexY - thumbY);
+                        handsData.push({ pinch: {x: pinchX, y: pinchY}, dist });
+                    }
+                    // Sort left-to-right to prevent index swapping
+                    handsData.sort((a, b) => a.pinch.x - b.pinch.x);
+                }
+
+                if (handsVal) handsVal.textContent = handsData.length;
+
+                // --- Portal solver ---
+                let hasPortal = false;
+                if (handsData.length >= 1) {
+                    let tCx, tCy, tR;
+
+                    if (handsData.length >= 2) {
+                        const p1 = handsData[0].pinch, p2 = handsData[1].pinch;
+                        tCx = (p1.x + p2.x) / 2;
+                        tCy = (p1.y + p2.y) / 2;
+                        tR = Math.max(100, Math.min(650, Math.hypot(p1.x-p2.x, p1.y-p2.y) / 1.4));
+                        lastHand1 = {...p1}; lastHand2 = {...p2};
+                        lastTwoHandsTime = Date.now();
+                    } else {
+                        const p = handsData[0].pinch;
+                        const dL = lastHand1 ? Math.hypot(p.x-lastHand1.x, p.y-lastHand1.y) : Infinity;
+                        const dR = lastHand2 ? Math.hypot(p.x-lastHand2.x, p.y-lastHand2.y) : Infinity;
+                        const missing = (dL < dR) ? lastHand2 : lastHand1;
+
+                        if (Date.now() - lastTwoHandsTime < 500 && missing) {
+                            tCx = (p.x + missing.x) / 2;
+                            tCy = (p.y + missing.y) / 2;
+                            tR = Math.max(100, Math.min(650, Math.hypot(p.x-missing.x, p.y-missing.y) / 1.4));
+                        } else {
+                            tCx = p.x; tCy = p.y;
+                            tR = Math.max(80, Math.min(300, handsData[0].dist * 3.5));
+                        }
+                    }
+
+                    // Smooth lerp
+                    if (portalCx === 0 && portalCy === 0) {
+                        portalCx = tCx; portalCy = tCy; portalR = tR;
+                    } else {
+                        portalCx += (tCx - portalCx) * 0.22;
+                        portalCy += (tCy - portalCy) * 0.22;
+                        portalR  += (tR  - portalR)  * 0.22;
+                    }
+                    hasPortal = true;
+                }
+
+                if (hasPortal && portalR > 10) {
+                    // Mirror-corrected portal center
+                    const mirCx = W - portalCx;
+                    const mirCy = portalCy;
+
+                    // --- Draw dark outside region (unfiltered video) ---
+                    ctx.filter = 'brightness(0.25) saturate(0.3)';
+                    ctx.drawImage(video, dx, dy, dw, dh);
+                    ctx.filter = 'none';
+
+                    // --- Draw wavy portal with GPU filter inside ---
+                    const portalPath = wavyCirclePath(mirCx, mirCy, portalR, t);
+                    ctx.save();
+                    ctx.clip(portalPath);
+                    filters[currentFilter].apply(ctx, dx, dy, dw, dh);
+                    ctx.restore();
+
+                    // --- Portal edge glow ---
+                    ctx.save();
+                    ctx.strokeStyle = `rgba(201, 168, 124, ${0.3 + Math.sin(t * 2) * 0.15})`;
+                    ctx.lineWidth = 2;
+                    ctx.stroke(portalPath);
+                    ctx.restore();
+
+                    // --- Concentric radar rings ---
+                    for (let i = 1; i <= 3; i++) {
+                        const ringR = portalR + 20 * i + Math.sin(t * 1.5 + i) * 5;
+                        ctx.beginPath();
+                        ctx.arc(mirCx, mirCy, ringR, 0, Math.PI * 2);
+                        ctx.strokeStyle = `rgba(201, 168, 124, ${0.12 - i * 0.03})`;
+                        ctx.lineWidth = 1;
+                        ctx.setLineDash([4, 8]);
+                        ctx.stroke();
+                        ctx.setLineDash([]);
+                    }
+
+                    // --- Stippled diamond reticles on hand landmarks ---
+                    if (showHelpers && latestResults && latestResults.multiHandLandmarks) {
+                        const tipsIdx = [4, 8, 12, 16, 20];
+                        const allTips = [];
+
+                        for (let hIdx = 0; hIdx < latestResults.multiHandLandmarks.length; hIdx++) {
+                            const lm = latestResults.multiHandLandmarks[hIdx];
+                            for (const id of tipsIdx) {
+                                const px = lm[id].x * W;
+                                const py = lm[id].y * H;
+                                allTips.push({x: px, y: py, hand: hIdx});
+
+                                // Diamond reticle ◇
+                                ctx.save();
+                                ctx.translate(px, py);
+                                ctx.rotate(Math.PI / 4);
+                                ctx.strokeStyle = 'rgba(201, 168, 124, 0.7)';
+                                ctx.lineWidth = 1.2;
+                                ctx.setLineDash([2, 3]);
+                                ctx.strokeRect(-6, -6, 12, 12);
+                                ctx.setLineDash([]);
+                                ctx.restore();
+
+                                ctx.fillStyle = '#fff';
+                                ctx.beginPath();
+                                ctx.arc(px, py, 2, 0, Math.PI * 2);
+                                ctx.fill();
+                            }
+                        }
+
+                        // Inter-hand web net lines
+                        ctx.save();
+                        for (let i = 0; i < allTips.length; i++) {
+                            for (let j = i + 1; j < allTips.length; j++) {
+                                const a = allTips[i], b = allTips[j];
+                                const d = Math.hypot(a.x - b.x, a.y - b.y);
+                                if (d < 400) {
+                                    const alpha = (1 - d / 400) * 0.8;
+                                    const cross = a.hand !== b.hand;
+                                    ctx.beginPath();
+                                    ctx.moveTo(a.x, a.y);
+                                    ctx.lineTo(b.x, b.y);
+                                    ctx.strokeStyle = cross
+                                        ? `rgba(0, 212, 255, ${alpha})`
+                                        : `rgba(238, 34, 85, ${alpha * 0.5})`;
+                                    ctx.lineWidth = cross ? 1.6 : 0.8;
+                                    ctx.stroke();
+                                }
+                            }
+                        }
+                        ctx.restore();
+                    }
+
+                } else {
+                    // No hands — show full unfiltered video
+                    ctx.drawImage(video, dx, dy, dw, dh);
+                }
+
+                ctx.restore(); // end mirror transform
+            }
+
+            // --- FPS Counter ---
+            frameCount++;
+            const now = performance.now();
+            if (now - fpsLast >= 500) {
+                fpsDisplay = (frameCount * 1000) / (now - fpsLast);
+                frameCount = 0;
+                fpsLast = now;
+                if (fpsVal) {
+                    fpsVal.textContent = fpsDisplay.toFixed(1);
+                    fpsVal.style.color = fpsDisplay >= 55 ? '#00ff88' : fpsDisplay >= 30 ? '#ffaa00' : '#ff3333';
+                }
+            }
+
+            requestAnimationFrame(renderScene);
+        }
+
+        requestAnimationFrame(renderScene);
+
+        // =============================================
+        //  CAMERA & MEDIAPIPE FRAME LOOP
+        // =============================================
+        const inputCanvas = document.createElement('canvas');
+        inputCanvas.width = 320; inputCanvas.height = 240;
+        const inputCtx = inputCanvas.getContext('2d', { willReadFrequently: true });
+        let processing = false;
+
+        async function processFrame() {
+            if (hands && video.readyState >= 2 && !processing) {
+                processing = true;
+                try {
+                    inputCtx.drawImage(video, 0, 0, 320, 240);
+                    await hands.send({ image: inputCanvas });
+                } catch (e) { /* silently recover */ }
+                processing = false;
+            }
+            requestAnimationFrame(processFrame);
+        }
+
+        async function startCamera() {
+            try {
+                let stream;
+                try {
+                    stream = await navigator.mediaDevices.getUserMedia({
+                        video: { width: {ideal:1280}, height: {ideal:720}, frameRate: {ideal:30} }
+                    });
+                } catch (_) {
+                    stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                }
+
+                video.srcObject = stream;
+                await new Promise(r => {
+                    if (video.readyState >= 2) { video.play().then(r).catch(r); }
+                    else { video.onloadedmetadata = () => video.play().then(r).catch(r); }
+                });
+
+                overlay.style.opacity = '0';
+                setTimeout(() => overlay.style.display = 'none', 500);
+
+                requestAnimationFrame(processFrame);
+            } catch (err) {
+                console.error('Camera failed:', err);
+                document.getElementById('loading-text').innerHTML =
+                    '<span style="color:#ff3333">CAMERA ACCESS FAILED.<br>ALLOW CAMERA & REFRESH.</span>';
+                document.querySelector('.spinner').style.display = 'none';
+            }
+        }
+
+        startCamera();
+
+        // =============================================
+        //  KEYBOARD CONTROLS
+        // =============================================
+        document.addEventListener('keydown', (e) => {
+            const key = e.key.toLowerCase();
+            if (key === 'f') {
+                currentFilter = (currentFilter + 1) % filters.length;
+                filterLabel.textContent = filters[currentFilter].name;
+            }
+            if (key === 'h') {
+                showHelpers = !showHelpers;
+            }
+            if (key === 'd') {
+                showDiag = !showDiag;
+                diag.style.display = showDiag ? 'flex' : 'none';
+            }
+        });
+
+    })();
+    </script>
+</body>
+</html>
